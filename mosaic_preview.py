@@ -51,10 +51,10 @@ def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: li
             if cell_alpha.mean() < 30:
                 continue
 
-            x1, y1 = col, row
-            x2 = min(col + cell_size - 1, w - 1)
-            y2 = min(row + cell_size - 1, h - 1)
-            cv2.rectangle(canvas, (x1, y1), (x2, y2), border_color, 1)
+            cx = col + cell_size // 2
+            cy = row + cell_size // 2
+            radius = int(cell_size * 0.3)
+            cv2.circle(canvas, (cx, cy), radius, border_color, -1, cv2.LINE_AA)
 
     return canvas
 
