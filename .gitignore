@@ -1,0 +1,10 @@
+raw/
+frames/
+isolated/
+checkpoints/
+preview_isolated.mp4
+prompts.json
+*.pyc
+__pycache__/
+venv/
+.DS_Store
