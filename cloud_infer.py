@@ -61,6 +61,10 @@ class SAM2Segmenter:
             print("Checkpoint downloaded and cached.")
 
         print("Building SAM 2 video predictor...")
+        # SAM 2 internally stores memory features in bfloat16, so we need
+        # autocast enabled to keep weights and activations in the same dtype.
+        self._autocast = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+        self._autocast.__enter__()
         self.predictor = build_sam2_video_predictor(
             config_file=CONFIG_NAME,
             ckpt_path=ckpt_path,

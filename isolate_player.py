@@ -171,6 +171,8 @@ def main():
                         help="Generate preview_isolated.mp4 on white background")
     parser.add_argument("--cloud", action="store_true",
                         help="Offload SAM 2 inference to Modal cloud GPU")
+    parser.add_argument("--prompts", default=None,
+                        help="Path to prompts.json to reuse (skips click UI)")
     args = parser.parse_args()
 
     # Resolve paths relative to script location
@@ -204,14 +206,28 @@ def main():
         device = select_device()
 
     # ── Get click points ─────────────────────────────────────────────────────
-    clicks = get_click_points(frames_dir, frame_names)
-    # Group clicks by (obj_id, frame_idx) — multiple points per call supported
     from collections import defaultdict
-    prompts = defaultdict(list)  # (obj_id, frame_idx) → [(x, y), ...]
-    for x, y, fi, oid in clicks:
-        prompts[(oid, fi)].append((x, y))
-    n_objects = len(set(c[3] for c in clicks))
-    print(f"Tracking {n_objects} object(s) with {len(clicks)} prompt(s)...")
+
+    if args.prompts:
+        # Load saved prompts instead of opening click UI
+        import json
+        prompts_path = os.path.join(script_dir, args.prompts) if not os.path.isabs(args.prompts) else args.prompts
+        with open(prompts_path) as f:
+            prompts_data = json.load(f)
+        prompts = defaultdict(list)
+        for p in prompts_data["prompts"]:
+            prompts[(p["obj_id"], p["frame_idx"])] = [tuple(pt) for pt in p["points"]]
+        n_objects = len(set(p["obj_id"] for p in prompts_data["prompts"]))
+        n_clicks = sum(len(p["points"]) for p in prompts_data["prompts"])
+        print(f"Loaded prompts from {prompts_path}")
+        print(f"Tracking {n_objects} object(s) with {n_clicks} prompt(s)...")
+    else:
+        clicks = get_click_points(frames_dir, frame_names)
+        prompts = defaultdict(list)  # (obj_id, frame_idx) → [(x, y), ...]
+        for x, y, fi, oid in clicks:
+            prompts[(oid, fi)].append((x, y))
+        n_objects = len(set(c[3] for c in clicks))
+        print(f"Tracking {n_objects} object(s) with {len(clicks)} prompt(s)...")
 
     if args.cloud:
         # ── Cloud inference via Modal ────────────────────────────────────────

@@ -1,19 +1,34 @@
 #!/usr/bin/env bash
 # prep_video.sh — Download (optional), trim, and extract frames from highlight footage
-# Usage: ./prep_video.sh [YOUTUBE_URL] [START_TIME] [DURATION_SECONDS]
-#   YOUTUBE_URL   — if omitted, expects raw/source.mp4 to already exist
-#   START_TIME    — HH:MM:SS offset into video (default: 00:00:00)
-#   DURATION      — seconds to keep (default: 3)
+# Usage: ./prep_video.sh [OPTIONS] [YOUTUBE_URL] [START_TIME] [DURATION_SECONDS]
+#   --raw-dir DIR    — directory for raw/trimmed video (default: raw/)
+#   --frames-dir DIR — directory for extracted frames (default: frames/)
+#   YOUTUBE_URL      — if omitted, expects raw-dir/source.mp4 to already exist
+#   START_TIME       — HH:MM:SS offset into video (default: 00:00:00)
+#   DURATION         — seconds to keep (default: 3)
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RAW_DIR=""
+FRAMES_DIR=""
+
+# Parse named arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --raw-dir)   RAW_DIR="$2"; shift 2 ;;
+        --frames-dir) FRAMES_DIR="$2"; shift 2 ;;
+        *) break ;;
+    esac
+done
 
 URL="${1:-}"
 START="${2:-00:00:00}"
 DURATION="${3:-3}"
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RAW_DIR="$SCRIPT_DIR/raw"
-FRAMES_DIR="$SCRIPT_DIR/frames"
+# Default directories relative to script
+RAW_DIR="${RAW_DIR:-$SCRIPT_DIR/raw}"
+FRAMES_DIR="${FRAMES_DIR:-$SCRIPT_DIR/frames}"
 
 mkdir -p "$RAW_DIR" "$FRAMES_DIR"
 

@@ -39,53 +39,41 @@ def _build_palette(single_color: str | None) -> list[tuple[int, int, int]]:
     return [_hex_to_rgb(h) for h in PALETTE_HEX]
 
 
-DIRECTIONS = [(0, -1), (1, 0), (0, 1), (-1, 0)]  # up, right, down, left
-
-
-def render_walk(image_rgba: np.ndarray, seed: int, palette: list,
-                step: int = 4, num_walkers: int = 200, max_steps: int = 600) -> np.ndarray:
-    """Fill visible forms with orthogonal random-walk lines."""
+def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: list, empty_pct: float = 0.4) -> np.ndarray:
+    """Render a single RGBA frame as circles and squares on a white background."""
     h, w = image_rgba.shape[:2]
     canvas = np.full((h, w, 3), 255, dtype=np.uint8)
 
     alpha = image_rgba[:, :, 3]
-    mask = alpha > 30  # boolean mask of visible pixels
-
-    # Collect all visible pixel coordinates to seed walkers
-    ys, xs = np.where(mask)
-    if len(ys) == 0:
-        return canvas
 
     rng = np.random.RandomState(seed)
 
-    for _ in range(num_walkers):
-        # Pick a random starting point inside the mask
-        idx = rng.randint(len(ys))
-        x, y = int(xs[idx]), int(ys[idx])
-        dir_idx = rng.randint(4)
+    for row in range(0, h, cell_size):
+        for col in range(0, w, cell_size):
+            cell_alpha = alpha[row : row + cell_size, col : col + cell_size]
+            if cell_alpha.mean() < 30:
+                continue
 
-        chosen = palette[rng.randint(len(palette))]
-        color_bgr = (chosen[2], chosen[1], chosen[0])
+            if rng.random() < empty_pct:
+                continue
 
-        for _ in range(max_steps):
-            dx, dy = DIRECTIONS[dir_idx]
-            nx, ny = x + dx * step, y + dy * step
+            chosen = palette[rng.randint(len(palette))]
+            color_bgr = (chosen[2], chosen[1], chosen[0])
 
-            # Stay inside mask — check endpoint and midpoint
-            if (0 <= nx < w and 0 <= ny < h and mask[ny, nx]
-                    and mask[y + dy * (step // 2), x + dx * (step // 2)]):
-                cv2.line(canvas, (x, y), (nx, ny), color_bgr, 1, cv2.LINE_AA)
-                x, y = nx, ny
-            else:
-                # Hit edge — must turn
-                pass
+            cx = col + cell_size // 2
+            cy = row + cell_size // 2
+            size = cell_size
+            half = size // 2
 
-            # Randomly turn 90 degrees (or keep going)
             r = rng.random()
-            if r < 0.35:
-                dir_idx = (dir_idx + 1) % 4
-            elif r < 0.7:
-                dir_idx = (dir_idx - 1) % 4
+            if r < 0.33:
+                cv2.circle(canvas, (cx, cy), half, color_bgr, -1, cv2.LINE_AA)
+            elif r < 0.66:
+                cv2.rectangle(canvas, (cx - half, cy - half), (cx + half, cy + half), color_bgr, -1, cv2.LINE_AA)
+            else:
+                # Plus sign
+                cv2.line(canvas, (cx - half, cy), (cx + half, cy), color_bgr, 1, cv2.LINE_AA)
+                cv2.line(canvas, (cx, cy - half), (cx, cy + half), color_bgr, 1, cv2.LINE_AA)
 
     return canvas
 
@@ -94,10 +82,12 @@ def main():
     parser = argparse.ArgumentParser(description="Geometric mosaic preview from isolated PNGs")
     parser.add_argument("--input", default="isolated", help="Directory of RGBA PNGs")
     parser.add_argument("--output", default="preview_mosaic.mp4", help="Output video path")
-    parser.add_argument("--cell-size", type=int, default=8, help="Grid cell size in pixels")
+    parser.add_argument("--cell-size", type=int, default=10, help="Grid cell size in pixels")
     parser.add_argument("--fps", type=int, default=30, help="Output video FPS")
     parser.add_argument("--color", default=None, metavar="HEX",
                         help="Single hex color for all cells (e.g. #000000). Omit to use PALETTE_HEX.")
+    parser.add_argument("--empty", type=float, default=0.4,
+                        help="Fraction of cells to leave empty (0.0–1.0, default 0.4)")
     args = parser.parse_args()
 
     png_paths = sorted(glob.glob(os.path.join(args.input, "*.png")))
@@ -124,7 +114,7 @@ def main():
             alpha_ch = np.full((h, w, 1), 255, dtype=np.uint8)
             frame = np.concatenate([frame, alpha_ch], axis=2)
 
-        mosaic = render_walk(frame, seed=i, palette=palette)
+        mosaic = render_mosaic(frame, args.cell_size, seed=i, palette=palette, empty_pct=args.empty)
         writer.write(mosaic)
 
         if (i + 1) % 50 == 0 or i == len(png_paths) - 1:
