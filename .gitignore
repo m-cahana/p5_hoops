@@ -2,7 +2,7 @@ raw/
 frames/
 isolated/
 checkpoints/
-preview_isolated.mp4
+*.mp4
 prompts.json
 *.pyc
 __pycache__/
