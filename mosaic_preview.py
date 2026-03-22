@@ -121,7 +121,6 @@ def main():
         writer.write(mosaic)
 
         if stack is not None:
-            # Paint non-white pixels onto the composite
             mask = np.any(mosaic != 255, axis=2)
             stack[mask] = mosaic[mask]
 
