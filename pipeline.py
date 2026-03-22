@@ -63,6 +63,7 @@ def run_isolate(vdir: str, cloud: bool = False, prompts: str | None = None):
 def run_mosaic(vdir: str, cell_size: int, fps: int, color: str | None, empty: float):
     input_dir = os.path.join(vdir, "isolated")
     output_path = os.path.join(vdir, "preview_mosaic.mp4")
+    stack_path = os.path.join(vdir, "frame_stack.png")
 
     cmd = [
         sys.executable, os.path.join(SCRIPT_DIR, "mosaic_preview.py"),
@@ -71,6 +72,7 @@ def run_mosaic(vdir: str, cell_size: int, fps: int, color: str | None, empty: fl
         "--cell-size", str(cell_size),
         "--fps", str(fps),
         "--empty", str(empty),
+        "--frame-stack", stack_path,
     ]
     if color:
         cmd.extend(["--color", color])

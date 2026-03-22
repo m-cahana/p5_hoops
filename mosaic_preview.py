@@ -88,6 +88,8 @@ def main():
                         help="Single hex color for all cells (e.g. #000000). Omit to use PALETTE_HEX.")
     parser.add_argument("--empty", type=float, default=0.4,
                         help="Fraction of cells to leave empty (0.0–1.0, default 0.4)")
+    parser.add_argument("--frame-stack", default=None, metavar="PATH",
+                        help="Output path for a composite PNG of all mosaic frames stacked")
     args = parser.parse_args()
 
     png_paths = sorted(glob.glob(os.path.join(args.input, "*.png")))
@@ -103,6 +105,7 @@ def main():
     writer = cv2.VideoWriter(args.output, fourcc, args.fps, (w, h))
 
     palette = _build_palette(args.color)
+    stack = np.full((h, w, 3), 255, dtype=np.uint8) if args.frame_stack else None
 
     print(f"Processing {len(png_paths)} frames (cell_size={args.cell_size})...")
     for i, path in enumerate(png_paths):
@@ -117,11 +120,20 @@ def main():
         mosaic = render_mosaic(frame, args.cell_size, seed=i, palette=palette, empty_pct=args.empty)
         writer.write(mosaic)
 
+        if stack is not None:
+            # Paint non-white pixels onto the composite
+            mask = np.any(mosaic != 255, axis=2)
+            stack[mask] = mosaic[mask]
+
         if (i + 1) % 50 == 0 or i == len(png_paths) - 1:
             print(f"  {i + 1}/{len(png_paths)}")
 
     writer.release()
     print(f"Saved {args.output}")
+
+    if stack is not None:
+        cv2.imwrite(args.frame_stack, stack)
+        print(f"Saved frame stack {args.frame_stack}")
 
 
 if __name__ == "__main__":
