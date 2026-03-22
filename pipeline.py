@@ -60,7 +60,7 @@ def run_isolate(vdir: str, cloud: bool = False, prompts: str | None = None):
     subprocess.run(cmd, check=True)
 
 
-def run_mosaic(vdir: str, cell_size: int, fps: int, color: str | None, empty: float):
+def run_mosaic(vdir: str, cell_size: int, fps: int, color: str | None, density: float):
     input_dir = os.path.join(vdir, "isolated")
     output_path = os.path.join(vdir, "preview_mosaic.mp4")
     stack_path = os.path.join(vdir, "frame_stack.png")
@@ -71,7 +71,7 @@ def run_mosaic(vdir: str, cell_size: int, fps: int, color: str | None, empty: fl
         "--output", output_path,
         "--cell-size", str(cell_size),
         "--fps", str(fps),
-        "--empty", str(empty),
+        "--density", str(density),
         "--frame-stack", stack_path,
     ]
     if color:
@@ -102,7 +102,7 @@ def main():
     parser.add_argument("--cell-size", type=int, default=10, help="Mosaic cell size")
     parser.add_argument("--fps", type=int, default=30, help="Output video FPS")
     parser.add_argument("--color", default=None, help="Single hex color for mosaic")
-    parser.add_argument("--empty", type=float, default=0.4, help="Fraction of empty cells")
+    parser.add_argument("--density", type=float, default=0.15, help="Path density (fraction of occupied pixels to walk)")
 
     args = parser.parse_args()
 
@@ -117,7 +117,7 @@ def main():
         elif step == "isolate":
             run_isolate(vdir, cloud=args.cloud, prompts=args.prompts)
         elif step == "mosaic":
-            run_mosaic(vdir, args.cell_size, args.fps, args.color, args.empty)
+            run_mosaic(vdir, args.cell_size, args.fps, args.color, args.density)
 
     print(f"\nDone! Output in {vdir}/")
 

@@ -1,9 +1,9 @@
 """
-mosaic_preview.py — Render isolated PNGs as a geometric mosaic video.
+mosaic_preview.py — Render isolated PNGs as a wandering-path mosaic video.
 
 Reads RGBA PNGs from the isolated/ directory and produces a video where
-visible regions are rendered as small squares and circles of varying size,
-creating a p5-style artistic effect using circles and lines.
+the visible silhouette is filled with a single wandering path that makes
+90-degree turns at random intervals (Hamming cover style).
 
 Usage:
     python mosaic_preview.py [--input isolated] [--output preview_mosaic.mp4] [--cell-size 8]
@@ -39,41 +39,113 @@ def _build_palette(single_color: str | None) -> list[tuple[int, int, int]]:
     return [_hex_to_rgb(h) for h in PALETTE_HEX]
 
 
-def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: list, empty_pct: float = 0.4) -> np.ndarray:
-    """Render a single RGBA frame as circles and squares on a white background."""
+# Cardinal directions: right, down, left, up
+_DIRS = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+
+
+def _walk_path(canvas, mask, x, y, steps, rng, palette, cell_size):
+    """Walk a single wandering path for `steps` pixel-steps, drawing onto canvas."""
+    h, w = mask.shape
+    line_thickness = max(1, cell_size // 5)
+    min_seg = cell_size // 2
+    max_seg = cell_size * 3
+
+    chosen = palette[rng.randint(len(palette))]
+    color_bgr = (chosen[2], chosen[1], chosen[0])
+
+    dir_idx = rng.randint(4)
+    dx, dy = _DIRS[dir_idx]
+    seg_len = rng.randint(min_seg, max_seg + 1)
+    seg_walked = 0
+    walked = 0
+    prev_x, prev_y = x, y
+    stuck_count = 0
+
+    while walked < steps:
+        nx, ny = x + dx, y + dy
+        in_bounds = 0 <= nx < w and 0 <= ny < h
+        in_mask = in_bounds and mask[ny, nx]
+
+        if in_mask and seg_walked < seg_len:
+            x, y = nx, ny
+            seg_walked += 1
+            walked += 1
+            stuck_count = 0
+        else:
+            # Draw accumulated segment
+            if (prev_x, prev_y) != (x, y):
+                cv2.line(canvas, (prev_x, prev_y), (x, y), color_bgr, line_thickness)
+
+            # Try turning 90 degrees
+            turn = rng.choice([-1, 1])
+            new_dir = (dir_idx + turn) % 4
+            alt_dir = (dir_idx - turn) % 4
+            ndx, ndy = _DIRS[new_dir]
+            adx, ady = _DIRS[alt_dir]
+            can_turn = (0 <= x + ndx < w and 0 <= y + ndy < h and mask[y + ndy, x + ndx])
+            can_alt = (0 <= x + adx < w and 0 <= y + ady < h and mask[y + ady, x + adx])
+
+            if can_turn:
+                dir_idx = new_dir
+            elif can_alt:
+                dir_idx = alt_dir
+            elif in_mask:
+                # Can't turn, keep going forward
+                dx, dy = _DIRS[dir_idx]
+                seg_len = seg_walked + rng.randint(min_seg, max_seg + 1)
+                seg_walked = 0
+                prev_x, prev_y = x, y
+                continue
+            else:
+                # Stuck — bail out of this path
+                stuck_count += 1
+                if stuck_count > 5:
+                    break
+                # Try reversing
+                dir_idx = (dir_idx + 2) % 4
+
+            dx, dy = _DIRS[dir_idx]
+            seg_len = rng.randint(min_seg, max_seg + 1)
+            seg_walked = 0
+            prev_x, prev_y = x, y
+
+    # Draw final segment
+    if (prev_x, prev_y) != (x, y):
+        cv2.line(canvas, (prev_x, prev_y), (x, y), color_bgr, line_thickness)
+
+
+def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: list, density: float = 0.15) -> np.ndarray:
+    """Render each connected form as its own wandering path with 90-degree turns.
+
+    Each isolated shape (connected component) in the alpha mask gets a single
+    path in its own palette color, walking through that form only.
+    """
     h, w = image_rgba.shape[:2]
     canvas = np.full((h, w, 3), 255, dtype=np.uint8)
 
     alpha = image_rgba[:, :, 3]
+    mask = (alpha >= 30).astype(np.uint8)
+    if not mask.any():
+        return canvas
 
     rng = np.random.RandomState(seed)
 
-    for row in range(0, h, cell_size):
-        for col in range(0, w, cell_size):
-            cell_alpha = alpha[row : row + cell_size, col : col + cell_size]
-            if cell_alpha.mean() < 30:
-                continue
+    # Find connected components (each isolated form)
+    n_labels, labels = cv2.connectedComponents(mask)
 
-            if rng.random() < empty_pct:
-                continue
+    for label in range(1, n_labels):
+        component_mask = labels == label
+        ys, xs = np.where(component_mask)
+        if len(ys) == 0:
+            continue
 
-            chosen = palette[rng.randint(len(palette))]
-            color_bgr = (chosen[2], chosen[1], chosen[0])
+        n_steps = int(len(ys) * density)
+        if n_steps < 2:
+            continue
 
-            cx = col + cell_size // 2
-            cy = row + cell_size // 2
-            size = cell_size
-            half = size // 2
-
-            r = rng.random()
-            if r < 0.33:
-                cv2.circle(canvas, (cx, cy), half, color_bgr, -1, cv2.LINE_AA)
-            elif r < 0.66:
-                cv2.rectangle(canvas, (cx - half, cy - half), (cx + half, cy + half), color_bgr, -1, cv2.LINE_AA)
-            else:
-                # Plus sign
-                cv2.line(canvas, (cx - half, cy), (cx + half, cy), color_bgr, 1, cv2.LINE_AA)
-                cv2.line(canvas, (cx, cy - half), (cx, cy + half), color_bgr, 1, cv2.LINE_AA)
+        start_idx = rng.randint(len(ys))
+        x, y = int(xs[start_idx]), int(ys[start_idx])
+        _walk_path(canvas, component_mask, x, y, n_steps, rng, palette, cell_size)
 
     return canvas
 
@@ -86,8 +158,8 @@ def main():
     parser.add_argument("--fps", type=int, default=30, help="Output video FPS")
     parser.add_argument("--color", default=None, metavar="HEX",
                         help="Single hex color for all cells (e.g. #000000). Omit to use PALETTE_HEX.")
-    parser.add_argument("--empty", type=float, default=0.4,
-                        help="Fraction of cells to leave empty (0.0–1.0, default 0.4)")
+    parser.add_argument("--density", type=float, default=0.15,
+                        help="Path density as fraction of occupied pixels to walk (default 0.15)")
     parser.add_argument("--frame-stack", default=None, metavar="PATH",
                         help="Output path for a composite PNG of all mosaic frames stacked")
     args = parser.parse_args()
@@ -117,7 +189,7 @@ def main():
             alpha_ch = np.full((h, w, 1), 255, dtype=np.uint8)
             frame = np.concatenate([frame, alpha_ch], axis=2)
 
-        mosaic = render_mosaic(frame, args.cell_size, seed=i, palette=palette, empty_pct=args.empty)
+        mosaic = render_mosaic(frame, args.cell_size, seed=i, palette=palette, density=args.density)
         writer.write(mosaic)
 
         if stack is not None:
