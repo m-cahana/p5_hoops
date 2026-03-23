@@ -60,7 +60,7 @@ def run_isolate(vdir: str, cloud: bool = False, prompts: str | None = None):
     subprocess.run(cmd, check=True)
 
 
-def run_mosaic(vdir: str, cell_size: int, fps: int, color: str):
+def run_mosaic(vdir: str, cell_size: int, fps: int, color: str | None, grain: float):
     input_dir = os.path.join(vdir, "isolated")
     output_path = os.path.join(vdir, "preview_mosaic.mp4")
     stack_path = os.path.join(vdir, "frame_stack.png")
@@ -71,9 +71,12 @@ def run_mosaic(vdir: str, cell_size: int, fps: int, color: str):
         "--output", output_path,
         "--cell-size", str(cell_size),
         "--fps", str(fps),
-        "--color", color,
         "--frame-stack", stack_path,
     ]
+    if color:
+        cmd.extend(["--color", color])
+    if grain > 0:
+        cmd.extend(["--grain", str(grain)])
 
     print(f"=== MOSAIC: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
@@ -99,7 +102,8 @@ def main():
     # Mosaic args
     parser.add_argument("--cell-size", type=int, default=10, help="Mosaic cell size")
     parser.add_argument("--fps", type=int, default=30, help="Output video FPS")
-    parser.add_argument("--color", default="#000000", help="Hex color for cell borders (default #000000)")
+    parser.add_argument("--color", default=None, help="Single hex color for all cells. Omit for full palette.")
+    parser.add_argument("--grain", type=float, default=0, help="Film grain intensity (0=off, 25=subtle, 50=heavy)")
 
     args = parser.parse_args()
 
@@ -114,7 +118,7 @@ def main():
         elif step == "isolate":
             run_isolate(vdir, cloud=args.cloud, prompts=args.prompts)
         elif step == "mosaic":
-            run_mosaic(vdir, args.cell_size, args.fps, args.color)
+            run_mosaic(vdir, args.cell_size, args.fps, args.color, args.grain)
 
     print(f"\nDone! Output in {vdir}/")
 

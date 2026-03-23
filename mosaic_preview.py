@@ -17,13 +17,13 @@ import numpy as np
 
 # Fixed palette (hex). Used when --color is not passed.
 PALETTE_HEX: list[str] = [
-    "#FF5000",  # vivid orange
-    "#E62800",  # orange-red
+   # "#FF5000",  # vivid orange
+    # "#E62800",  # orange-red
     "#C81400",  # deep red
-    "#FF8C14",  # warm amber
+    # "#FF8C14",  # warm amber
     "#FFC83C",  # golden yellow
-    "#A00A00",  # dark crimson
-    "#500500",  # near-black red (shadow anchor)
+    # "#A00A00",  # dark crimson
+   # "#500500",  # near-black red (shadow anchor)
 ]
 
 
@@ -38,12 +38,13 @@ def _build_palette(single_color: str | None) -> list[tuple[int, int, int]]:
     return [_hex_to_rgb(h) for h in PALETTE_HEX]
 
 
-def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: list, border_color: tuple = (0, 0, 0)) -> np.ndarray:
-    """Render occupied cells as white squares with a colored border."""
+def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: list) -> np.ndarray:
+    """Render occupied cells as filled circles with random palette colors."""
     h, w = image_rgba.shape[:2]
     canvas = np.full((h, w, 3), 255, dtype=np.uint8)
 
     alpha = image_rgba[:, :, 3]
+    rng = np.random.RandomState(seed)
 
     for row in range(0, h, cell_size):
         for col in range(0, w, cell_size):
@@ -51,12 +52,26 @@ def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: li
             if cell_alpha.mean() < 30:
                 continue
 
+            chosen = palette[rng.randint(len(palette))]
+            color_bgr = (chosen[2], chosen[1], chosen[0])
+
             cx = col + cell_size // 2
             cy = row + cell_size // 2
             radius = int(cell_size * 0.3)
-            cv2.circle(canvas, (cx, cy), radius, border_color, -1, cv2.LINE_AA)
+            cv2.circle(canvas, (cx, cy), radius, color_bgr, -1, cv2.LINE_AA)
 
     return canvas
+
+
+def apply_film_grain(frame: np.ndarray, rng: np.random.RandomState, intensity: float = 25.0) -> np.ndarray:
+    """Overlay monochromatic film grain noise onto a BGR frame."""
+    h, w = frame.shape[:2]
+    noise = rng.normal(0, intensity, (h, w)).astype(np.float32)
+    # Apply same noise to all channels (monochromatic grain)
+    result = frame.astype(np.float32)
+    for c in range(3):
+        result[:, :, c] += noise
+    return np.clip(result, 0, 255).astype(np.uint8)
 
 
 def main():
@@ -65,8 +80,10 @@ def main():
     parser.add_argument("--output", default="preview_mosaic.mp4", help="Output video path")
     parser.add_argument("--cell-size", type=int, default=10, help="Grid cell size in pixels")
     parser.add_argument("--fps", type=int, default=30, help="Output video FPS")
-    parser.add_argument("--color", default="#000000", metavar="HEX",
-                        help="Hex color for cell borders (default #000000)")
+    parser.add_argument("--color", default=None, metavar="HEX",
+                        help="Single hex color for all cells (e.g. #000000). Omit to use full palette.")
+    parser.add_argument("--grain", type=float, default=0, metavar="INTENSITY",
+                        help="Film grain intensity (0=off, 25=subtle, 50=heavy)")
     parser.add_argument("--frame-stack", default=None, metavar="PATH",
                         help="Output path for a composite PNG of all mosaic frames stacked")
     args = parser.parse_args()
@@ -83,8 +100,8 @@ def main():
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(args.output, fourcc, args.fps, (w, h))
 
-    border_rgb = _hex_to_rgb(args.color)
-    border_bgr = (border_rgb[2], border_rgb[1], border_rgb[0])
+    palette = _build_palette(args.color)
+    grain_rng = np.random.RandomState(0) if args.grain > 0 else None
     stack = np.full((h, w, 3), 255, dtype=np.uint8) if args.frame_stack else None
 
     print(f"Processing {len(png_paths)} frames (cell_size={args.cell_size})...")
@@ -97,7 +114,9 @@ def main():
             alpha_ch = np.full((h, w, 1), 255, dtype=np.uint8)
             frame = np.concatenate([frame, alpha_ch], axis=2)
 
-        mosaic = render_mosaic(frame, args.cell_size, seed=i, palette=[], border_color=border_bgr)
+        mosaic = render_mosaic(frame, args.cell_size, seed=i, palette=palette)
+        if grain_rng is not None:
+            mosaic = apply_film_grain(mosaic, grain_rng, intensity=args.grain)
         writer.write(mosaic)
 
         if stack is not None:
