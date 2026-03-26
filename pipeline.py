@@ -60,7 +60,7 @@ def run_isolate(vdir: str, cloud: bool = False, prompts: str | None = None):
     subprocess.run(cmd, check=True)
 
 
-def run_mosaic(vdir: str, cell_size: int, fps: int, color: str | None, grain: float):
+def run_mosaic(vdir: str, cell_size: int, fps: int, color: str | None, grain: float, squares: int = 0):
     input_dir = os.path.join(vdir, "isolated")
     output_path = os.path.join(vdir, "preview_mosaic.mp4")
     stack_path = os.path.join(vdir, "frame_stack.png")
@@ -77,6 +77,8 @@ def run_mosaic(vdir: str, cell_size: int, fps: int, color: str | None, grain: fl
         cmd.extend(["--color", color])
     if grain > 0:
         cmd.extend(["--grain", str(grain)])
+    if squares > 0:
+        cmd.extend(["--squares", str(squares)])
 
     print(f"=== MOSAIC: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
@@ -104,6 +106,7 @@ def main():
     parser.add_argument("--fps", type=int, default=30, help="Output video FPS")
     parser.add_argument("--color", default=None, help="Single hex color for all cells. Omit for full palette.")
     parser.add_argument("--grain", type=float, default=0, help="Film grain intensity (0=off, 25=subtle, 50=heavy)")
+    parser.add_argument("--squares", type=int, default=0, help="Percentage of cells as squares instead of circles (0-100)")
 
     args = parser.parse_args()
 
@@ -118,7 +121,7 @@ def main():
         elif step == "isolate":
             run_isolate(vdir, cloud=args.cloud, prompts=args.prompts)
         elif step == "mosaic":
-            run_mosaic(vdir, args.cell_size, args.fps, args.color, args.grain)
+            run_mosaic(vdir, args.cell_size, args.fps, args.color, args.grain, args.squares)
 
     print(f"\nDone! Output in {vdir}/")
 

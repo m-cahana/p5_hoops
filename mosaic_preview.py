@@ -38,10 +38,15 @@ def _build_palette(single_color: str | None) -> list[tuple[int, int, int]]:
     return [_hex_to_rgb(h) for h in PALETTE_HEX]
 
 
-def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: list) -> np.ndarray:
-    """Render occupied cells as filled circles with random palette colors."""
+def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: list, supersample: int = 1, squares_pct: int = 0) -> np.ndarray:
+    """Render occupied cells as filled circles (and optionally squares) with random palette colors.
+
+    supersample: render at Nx resolution then downscale for smoother shapes.
+    squares_pct: 0-100, percentage of cells rendered as squares instead of circles.
+    """
     h, w = image_rgba.shape[:2]
-    canvas = np.full((h, w, 3), 255, dtype=np.uint8)
+    s = supersample
+    canvas = np.full((h * s, w * s, 3), 255, dtype=np.uint8)
 
     alpha = image_rgba[:, :, 3]
     rng = np.random.RandomState(seed)
@@ -55,11 +60,20 @@ def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: li
             chosen = palette[rng.randint(len(palette))]
             color_bgr = (chosen[2], chosen[1], chosen[0])
 
-            cx = col + cell_size // 2
-            cy = row + cell_size // 2
-            radius = int(cell_size * 0.3)
-            cv2.circle(canvas, (cx, cy), radius, color_bgr, -1, cv2.LINE_AA)
+            cx = (col + cell_size // 2) * s
+            cy = (row + cell_size // 2) * s
+            radius = int(cell_size * 0.3 * s)
 
+            if squares_pct > 0 and rng.randint(100) < squares_pct:
+                half = radius
+                pt1 = (cx - half, cy - half)
+                pt2 = (cx + half, cy + half)
+                cv2.rectangle(canvas, pt1, pt2, color_bgr, -1, cv2.LINE_AA)
+            else:
+                cv2.circle(canvas, (cx, cy), radius, color_bgr, -1, cv2.LINE_AA)
+
+    if s > 1:
+        canvas = cv2.resize(canvas, (w, h), interpolation=cv2.INTER_AREA)
     return canvas
 
 
@@ -84,6 +98,10 @@ def main():
                         help="Single hex color for all cells (e.g. #000000). Omit to use full palette.")
     parser.add_argument("--grain", type=float, default=0, metavar="INTENSITY",
                         help="Film grain intensity (0=off, 25=subtle, 50=heavy)")
+    parser.add_argument("--supersample", type=int, default=4, metavar="N",
+                        help="Render circles at Nx resolution then downscale for smoother edges (default 4)")
+    parser.add_argument("--squares", type=int, default=50, metavar="PCT",
+                        help="Percentage of cells rendered as squares instead of circles (0-100, default 0)")
     parser.add_argument("--frame-stack", default=None, metavar="PATH",
                         help="Output path for a composite PNG of all mosaic frames stacked")
     args = parser.parse_args()
@@ -114,7 +132,7 @@ def main():
             alpha_ch = np.full((h, w, 1), 255, dtype=np.uint8)
             frame = np.concatenate([frame, alpha_ch], axis=2)
 
-        mosaic = render_mosaic(frame, args.cell_size, seed=i, palette=palette)
+        mosaic = render_mosaic(frame, args.cell_size, seed=i, palette=palette, supersample=args.supersample, squares_pct=args.squares)
         if grain_rng is not None:
             mosaic = apply_film_grain(mosaic, grain_rng, intensity=args.grain)
         writer.write(mosaic)
