@@ -40,7 +40,7 @@ Renders isolated frames as a grid of circles/squares and outputs `videos/shai2/p
 Options:
 
 - `--cell-size N` — grid cell size in pixels (default 10)
-- `--squares PCT` — percentage of cells as squares instead of circles (0-100, default 0)
+- `--squares PCT` — percentage of cells as squares instead of circles (0-100, default 50)
 - `--color '#FF0000'` — single color for all cells (default: palette)
 - `--grain 25` — film grain overlay (0=off)
 - `--fps 30` — output framerate

@@ -17,13 +17,8 @@ import numpy as np
 
 # Fixed palette (hex). Used when --color is not passed.
 PALETTE_HEX: list[str] = [
-   # "#FF5000",  # vivid orange
-    # "#E62800",  # orange-red
-    "#C81400",  # deep red
-    # "#FF8C14",  # warm amber
-    "#FFC83C",  # golden yellow
-    # "#A00A00",  # dark crimson
-   # "#500500",  # near-black red (shadow anchor)
+   "#b80900", 
+   '#0746a6',
 ]
 
 
