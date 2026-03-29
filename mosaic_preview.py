@@ -27,7 +27,9 @@ def _hex_to_rgb(h: str) -> tuple[int, int, int]:
     return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
-def _build_palette(single_color: str | None) -> list[tuple[int, int, int]]:
+def _build_palette(single_color: str | None, palette_colors: list[str] | None = None) -> list[tuple[int, int, int]]:
+    if palette_colors:
+        return [_hex_to_rgb(c) for c in palette_colors]
     if single_color:
         return [_hex_to_rgb(single_color)]
     return [_hex_to_rgb(h) for h in PALETTE_HEX]
@@ -91,6 +93,8 @@ def main():
     parser.add_argument("--fps", type=int, default=30, help="Output video FPS")
     parser.add_argument("--color", default=None, metavar="HEX",
                         help="Single hex color for all cells (e.g. #000000). Omit to use full palette.")
+    parser.add_argument("--palette", nargs="+", default=None, metavar="HEX",
+                        help="Custom palette of hex colors (e.g. --palette '#ff0000' '#00ff00' '#0000ff'). Overrides --color and default palette.")
     parser.add_argument("--grain", type=float, default=0, metavar="INTENSITY",
                         help="Film grain intensity (0=off, 25=subtle, 50=heavy)")
     parser.add_argument("--supersample", type=int, default=4, metavar="N",
@@ -113,7 +117,7 @@ def main():
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(args.output, fourcc, args.fps, (w, h))
 
-    palette = _build_palette(args.color)
+    palette = _build_palette(args.color, args.palette)
     grain_rng = np.random.RandomState(0) if args.grain > 0 else None
     stack = np.full((h, w, 3), 255, dtype=np.uint8) if args.frame_stack else None
 
