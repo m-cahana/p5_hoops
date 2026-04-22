@@ -1,0 +1,12 @@
+[
+  {
+    "name": "warm court",
+    "palette": ["#f43530", "#e0e5da", "#00aabb"],
+    "bg": "#C4A882"
+  },
+  {
+    "name": "blues",
+    "palette": ["#0098d8", "#f54123", "#e5e7de"],
+    "bg": "#08327d"
+  }
+]

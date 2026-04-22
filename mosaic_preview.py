@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import glob
+import json
 import os
 
 import cv2
@@ -17,8 +18,7 @@ import numpy as np
 
 # Fixed palette (hex). Used when --color is not passed.
 PALETTE_HEX: list[str] = [
-   "#b80900", 
-   '#0746a6',
+   '#00008A',
 ]
 
 
@@ -35,7 +35,7 @@ def _build_palette(single_color: str | None, palette_colors: list[str] | None = 
     return [_hex_to_rgb(h) for h in PALETTE_HEX]
 
 
-def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: list, supersample: int = 1, squares_pct: int = 0) -> np.ndarray:
+def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: list, supersample: int = 1, squares_pct: int = 0, primary_pct: int = 0, bg_bgr: tuple = (255, 255, 255)) -> np.ndarray:
     """Render occupied cells as filled circles (and optionally squares) with random palette colors.
 
     supersample: render at Nx resolution then downscale for smoother shapes.
@@ -43,7 +43,7 @@ def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: li
     """
     h, w = image_rgba.shape[:2]
     s = supersample
-    canvas = np.full((h * s, w * s, 3), 255, dtype=np.uint8)
+    canvas = np.full((h * s, w * s, 3), bg_bgr, dtype=np.uint8)
 
     alpha = image_rgba[:, :, 3]
     rng = np.random.RandomState(seed)
@@ -54,7 +54,12 @@ def render_mosaic(image_rgba: np.ndarray, cell_size: int, seed: int, palette: li
             if cell_alpha.mean() < 30:
                 continue
 
-            chosen = palette[rng.randint(len(palette))]
+            if primary_pct > 0 and len(palette) > 1 and rng.randint(100) < primary_pct:
+                chosen = palette[0]
+            elif primary_pct > 0 and len(palette) > 1:
+                chosen = palette[1 + rng.randint(len(palette) - 1)]
+            else:
+                chosen = palette[rng.randint(len(palette))]
             color_bgr = (chosen[2], chosen[1], chosen[0])
 
             cx = (col + cell_size // 2) * s
@@ -85,8 +90,20 @@ def apply_film_grain(frame: np.ndarray, rng: np.random.RandomState, intensity: f
     return np.clip(result, 0, 255).astype(np.uint8)
 
 
+def _load_preset(name: str) -> dict:
+    palettes_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "palettes.json")
+    with open(palettes_path) as f:
+        presets = json.load(f)
+    for p in presets:
+        if p["name"] == name:
+            return p
+    names = [p["name"] for p in presets]
+    raise SystemExit(f"Preset '{name}' not found. Available: {', '.join(names)}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Geometric mosaic preview from isolated PNGs")
+    parser.add_argument("--preset", default=None, help="Load palette and bg from palettes.json by name")
     parser.add_argument("--input", default="isolated", help="Directory of RGBA PNGs")
     parser.add_argument("--output", default="preview_mosaic.mp4", help="Output video path")
     parser.add_argument("--cell-size", type=int, default=10, help="Grid cell size in pixels")
@@ -101,9 +118,20 @@ def main():
                         help="Render circles at Nx resolution then downscale for smoother edges (default 4)")
     parser.add_argument("--squares", type=int, default=50, metavar="PCT",
                         help="Percentage of cells rendered as squares instead of circles (0-100, default 0)")
+    parser.add_argument("--primary-pct", type=int, default=80, metavar="PCT",
+                        help="Percentage of cells using the first palette color (0=even spread, 80=first color 80%% of the time)")
+    parser.add_argument("--bg", default="#ffffff", metavar="HEX",
+                        help="Background color as hex (default #ffffff white)")
     parser.add_argument("--frame-stack", default=None, metavar="PATH",
                         help="Output path for a composite PNG of all mosaic frames stacked")
     args = parser.parse_args()
+
+    if args.preset:
+        preset = _load_preset(args.preset)
+        if not args.palette and not args.color:
+            args.palette = preset.get("palette")
+        if args.bg == "#ffffff" and "bg" in preset:
+            args.bg = preset["bg"]
 
     png_paths = sorted(glob.glob(os.path.join(args.input, "*.png")))
     if not png_paths:
@@ -118,8 +146,10 @@ def main():
     writer = cv2.VideoWriter(args.output, fourcc, args.fps, (w, h))
 
     palette = _build_palette(args.color, args.palette)
+    bg_rgb = _hex_to_rgb(args.bg)
+    bg_bgr = (bg_rgb[2], bg_rgb[1], bg_rgb[0])
     grain_rng = np.random.RandomState(0) if args.grain > 0 else None
-    stack = np.full((h, w, 3), 255, dtype=np.uint8) if args.frame_stack else None
+    stack = np.full((h, w, 3), bg_bgr, dtype=np.uint8) if args.frame_stack else None
 
     print(f"Processing {len(png_paths)} frames (cell_size={args.cell_size})...")
     for i, path in enumerate(png_paths):
@@ -131,13 +161,13 @@ def main():
             alpha_ch = np.full((h, w, 1), 255, dtype=np.uint8)
             frame = np.concatenate([frame, alpha_ch], axis=2)
 
-        mosaic = render_mosaic(frame, args.cell_size, seed=i, palette=palette, supersample=args.supersample, squares_pct=args.squares)
+        mosaic = render_mosaic(frame, args.cell_size, seed=i, palette=palette, supersample=args.supersample, squares_pct=args.squares, primary_pct=args.primary_pct, bg_bgr=bg_bgr)
         if grain_rng is not None:
             mosaic = apply_film_grain(mosaic, grain_rng, intensity=args.grain)
         writer.write(mosaic)
 
         if stack is not None:
-            mask = np.any(mosaic != 255, axis=2)
+            mask = np.any(mosaic != bg_bgr, axis=2)
             stack[mask] = mosaic[mask]
 
         if (i + 1) % 50 == 0 or i == len(png_paths) - 1:
